@@ -8,11 +8,12 @@
 #include <iomanip>
 #include "namedtypes.h"
 
-#ifdef __GNU
+#if defined(__GNU) || defined(__APPLE__)
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <net/if.h>
+#include <net/if_dl.h>
 #include <unistd.h>
 #include <cstring>
 #include <sys/ioctl.h>
@@ -21,23 +22,43 @@
 
 unsigned long long int GenerateClockIdentityFromInterface(const IpInterface& ipInterface)
 {
+    char *mac;
+
+    char const *if_name = ipInterface.Get().c_str();
+
+#if defined(__GNU)
     int fd;
 
-	struct ifreq ifr;
-	char *mac;
+    struct ifreq ifr;
 
-	fd = socket(AF_INET, SOCK_DGRAM, 0);
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
 
-	ifr.ifr_addr.sa_family = AF_INET;
-	strncpy((char *)ifr.ifr_name , ipInterface.Get().c_str() , IFNAMSIZ-1);
+    ifr.ifr_addr.sa_family = AF_INET;
+    strncpy((char *)ifr.ifr_name , if_name , IFNAMSIZ-1);
 
-	ioctl(fd, SIOCGIFHWADDR, &ifr);
+    ioctl(fd, SIOCGIFHWADDR, &ifr);
 
-	close(fd);
+    close(fd);
 
-	mac = (char *)ifr.ifr_hwaddr.sa_data;
+    mac = (char *)ifr.ifr_hwaddr.sa_data;
+#elif defined(__APPLE__)
+    ifaddrs* iflist;
+    if (getifaddrs(&iflist) == 0) {
+        for (ifaddrs* cur = iflist; cur; cur = cur->ifa_next) {
+            if ((cur->ifa_addr->sa_family == AF_LINK) &&
+                    (strcmp(cur->ifa_name, if_name) == 0) &&
+                    cur->ifa_addr) {
+                sockaddr_dl* sdl = (sockaddr_dl*)cur->ifa_addr;
+                mac = LLADDR(sdl);
+                break;
+            }
+        }
+    }
+#else
+#   error no definition for get_mac_address() on this platform!
+#endif
 
-	unsigned long long int nAddress(0);
+    unsigned long long int nAddress(0);
     nAddress = mac[0];
     nAddress = nAddress << 56;
     nAddress += (static_cast<unsigned long long int>(mac[1]) << 48);
@@ -47,8 +68,12 @@ unsigned long long int GenerateClockIdentityFromInterface(const IpInterface& ipI
     nAddress += (static_cast<unsigned long long int>(mac[3]) << 16);
     nAddress += (static_cast<unsigned long long int>(mac[4]) << 8);
     nAddress += static_cast<unsigned long long int>(mac[5]);
-    return nAddress;
 
+#if defined(HAVE_GETIFADDRS)
+    freeifaddrs(iflist);
+#endif
+
+    return nAddress;
 }
 
 

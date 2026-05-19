@@ -6,7 +6,7 @@
     #else
         #define PTP_IMPEXPORT __declspec(dllimport)
     #endif
-#elseif __WXGNU__
+#elif __WXGNU__
     #ifdef PTP_DLL
         #define PTP_IMPEXPORT __attribute__((visibility("default")))
     #else
